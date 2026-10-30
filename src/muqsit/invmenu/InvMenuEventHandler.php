@@ -55,7 +55,9 @@ final class InvMenuEventHandler implements Listener{
 			// these are not magic numbers. 255 (windowId) is supposed to be ContainerIds::NONE (-1) but it appears
 			// either pocketmine or mojang wrongly encodes/decodes the packet. the same applies to 247 (windowType)
 			// which actually is WindowTypes::NONE (-9).
-			if(!$packet->server && $packet->windowId === 255 && $packet->windowType === 247){
+			// Before 1.21 the close packet has no windowType at all. Also accept
+			// signed sentinel values on forks which normalize the protocol bytes.
+			if(!$packet->server && ($packet->windowId & 0xff) === 255 && (!isset($packet->windowType) || ($packet->windowType & 0xff) === 247)){
 				$player = $event->getOrigin()->getPlayer();
 				if($player !== null && $this->player_manager->getNullable($player)?->dispatcher !== null){
 					$event->cancel();
@@ -99,13 +101,16 @@ final class InvMenuEventHandler implements Listener{
 
 		$current = $session->current;
 		if($current !== null && $event->getInventory() === $current->menu->getInventory()){
+			if($session->dispatcher !== null && $session->dispatcher->state === PlayerWindowDispatcher::STATE_SENDING && $session->dispatcher->info === $current){
+				$session->dispatcher->setResult(false);
+				return;
+			}
 			$current->graphic->remove($player);
 			$session->current = null;
+		}else{
+			$current = null;
 		}
 		$session->network->wait(PlayerNetwork::DELAY_TYPE_ANIMATION_WAIT, static fn($success) => false);
-		if($session->dispatcher !== null && $session->dispatcher->state === PlayerWindowDispatcher::STATE_SENDING && $session->dispatcher->info === $current){
-			return;
-		}
 		$current?->menu->onClose($player);
 	}
 
@@ -165,3 +170,4 @@ final class InvMenuEventHandler implements Listener{
 		}
 	}
 }
+

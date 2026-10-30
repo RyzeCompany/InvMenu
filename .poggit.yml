@@ -1,4 +1,4 @@
---- # Poggit-CI Manifest. Open the CI at https://poggit.pmmp.io/ci/Muqsit/InvMenu
+--- # Poggit-CI Manifest. Open the CI at https://poggit.pmmp.io/ci/RyzeCompany/InvMenu
 branches:
 - master
 - "4.0"
@@ -8,3 +8,4 @@ projects:
     model: virion
     type: library
 ...
+

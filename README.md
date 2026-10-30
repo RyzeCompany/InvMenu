@@ -1,10 +1,29 @@
 # InvMenu
 Create and manage virtual inventories in PocketMine-MP.
 
+This RyzeCompany fork also supports RyzeMP's multiversion network API. The public
+`muqsit\invmenu` namespace, menu types and transaction listeners are unchanged.
+Fake blocks use the recipient's session palette; closing restores the real block
+and block entity through the matching PocketMine or RyzeMP World API.
+
+The compatibility code handles pre-1.21 close packets without `windowType`,
+preserves each menu's window type during retries and expires missing latency
+responses after 100 server ticks. An expired pending batch reports failure and
+releases its callbacks; a late response cannot reopen the expired menu.
+
+RyzeMP's accepted protocol list remains the source of truth for client versions.
+Support in this library does not add new protocols to the server. Real Bedrock
+clients must still be checked for opening, closing, item movement and mixed-version
+shared inventories before a production rollout.
+
 ## Installation and setup
-Download the compiled .phar file from [Poggit CI](https://poggit.pmmp.io/ci/Muqsit/InvMenu/~) and place it in your `virions/` folder.
+Download the compiled .phar file from [this fork's Poggit CI](https://poggit.pmmp.io/ci/RyzeCompany/InvMenu/~) and place it in your `virions/` folder.
 Read [installation](https://github.com/Muqsit/InvMenu/wiki/Installation) and [using in a plugin](https://github.com/Muqsit/InvMenu/wiki/Using-InvMenu-in-a-plugin)
 for a more elaborate guide on how to setup InvMenu library.
+
+Rebuild every plugin that embeds InvMenu using this fork. Replacing a server PHAR
+or copying a virion next to an already compiled plugin does not replace the
+plugin's bundled copy of InvMenu.
 
 > [!NOTE]
 > You must register `InvMenuHandler` before you can use InvMenu.
@@ -191,4 +210,5 @@ $menu = InvMenu::create(self::TYPE_DISPENSER);
 
 ## InvMenu Wiki
 Applications, examples, tutorials and featured projects using InvMenu can be found on the [InvMenu Wiki](https://github.com/Muqsit/InvMenu/wiki/InvMenu-v4.0).
+
 

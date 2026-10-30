@@ -146,6 +146,9 @@ class InvMenu implements InvMenuTypeIds{
 		if($callback !== null){
 			$session->dispatcher->addCallback($callback);
 		}
+		// Publish the dispatcher before opening: InventoryOpenEvent can fail or
+		// invoke another menu synchronously, including from the result callback.
+		$session->dispatcher->start();
 	}
 
 	public function handleInventoryTransaction(Player $player, Item $out, Item $in, SlotChangeAction $action, InventoryTransaction $transaction) : InvMenuTransactionResult{
@@ -159,3 +162,4 @@ class InvMenu implements InvMenuTypeIds{
 		}
 	}
 }
+
