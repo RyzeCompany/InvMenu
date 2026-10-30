@@ -93,7 +93,7 @@ function acknowledge(InvMenuEventHandler $handler, NetworkSession $network) : vo
 }
 
 $tests = [];
-$tests['virtual blocks use each recipient palette, including auxiliary barriers'] = static function() : void{
+$tests['virtual blocks use each recipient palette'] = static function() : void{
 	foreach([589, 827, 844, 975, 2169, 2193] as $protocol){
 		[$player, , $network] = fixture($protocol);
 		$graphic = new BlockInvMenuGraphic(new Block(54), new Vector3(4, 65, -8));
@@ -108,7 +108,7 @@ $tests['closing restores real block and tile with the correct World API'] = stat
 	$graphic->remove($player);
 	$protocol = ($GLOBALS['argv'][1] ?? '') === 'ryzemp' ? 827 : 2193;
 	$expected = $protocol * 10000 + 7;
-	//$network now contains the fake block followed by the real block and its tile.
+	// The fake block is followed by the real block and its tile.
 	if($network->packets[1]->blockRuntimeId !== $expected){ throw new RuntimeException('Restored using the wrong palette'); }
 	if(!$network->packets[2] instanceof \pocketmine\network\mcpe\protocol\BlockActorDataPacket){ throw new RuntimeException('Lost real block entity data'); }
 	$graphic->remove($player);
@@ -124,6 +124,20 @@ $tests['dimension changes do not restore old coordinates in the destination'] = 
 	same([], $player->world->restored);
 	same([], $old->restored);
 	same(1, count($network->packets));
+};
+$tests['double chest graphics restore both positions once'] = static function() : void{
+	[$player, , $network] = fixture();
+	$graphic = new \muqsit\invmenu\type\graphic\MultiBlockInvMenuGraphic([
+		new BlockInvMenuGraphic(new Block(54), new Vector3(4, 65, -8)),
+		new BlockInvMenuGraphic(new Block(54), new Vector3(5, 65, -8))
+	]);
+	$graphic->send($player, null);
+	$graphic->remove($player);
+	$graphic->remove($player);
+	same(6, count($network->packets));
+	same(2, count($player->world->restored));
+	same(4.0, $player->world->restored[0][1][0]->x);
+	same(5.0, $player->world->restored[1][1][0]->x);
 };
 $tests['legacy close rejection works without an initialized windowType'] = static function() : void{
 	[$player, $session, $network, , $events] = fixture(589);
@@ -217,6 +231,20 @@ $tests['missing latency echoes expire the current request and its queue'] = stat
 	$session->network->wait(0, $then);
 	$session->network->notify(latestLatency($network));
 	same([false, false, true], $results);
+};
+$tests['a stalled animated opening expires and ignores its late echo'] = static function() : void{
+	[$player, $session, $network, $scheduler] = fixture();
+	$graphic = new TestGraphic(WindowTypes::CONTAINER, 1);
+	$results = [];
+	(new InvMenu(new TestMenuType($graphic)))->send($player, callback: static function(bool $ok) use(&$results) : void{ $results[] = $ok; });
+	$stale = latestLatency($network);
+	$scheduler->advance(100);
+	$session->network->notify($stale);
+	same([false], $results);
+	same(1, $graphic->removed);
+	same(null, $session->dispatcher);
+	same(null, $player->getCurrentWindow());
+	same(0, $scheduler->activeCount());
 };
 $tests['a callback can enqueue another latency request without losing it'] = static function() : void{
 	[, $session, $network, $scheduler] = fixture();

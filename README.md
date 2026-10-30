@@ -17,7 +17,9 @@ clients must still be checked for opening, closing, item movement and mixed-vers
 shared inventories before a production rollout.
 
 ## Installation and setup
-Download the compiled .phar file from [this fork's Poggit CI](https://poggit.pmmp.io/ci/RyzeCompany/InvMenu/~) and place it in your `virions/` folder.
+Build [this fork](https://github.com/RyzeCompany/InvMenu) as a virion with Poggit
+and place the resulting .phar file in your `virions/` folder. Builds from
+`Muqsit/InvMenu` do not include this fork's RyzeMP compatibility changes.
 Read [installation](https://github.com/Muqsit/InvMenu/wiki/Installation) and [using in a plugin](https://github.com/Muqsit/InvMenu/wiki/Using-InvMenu-in-a-plugin)
 for a more elaborate guide on how to setup InvMenu library.
 
