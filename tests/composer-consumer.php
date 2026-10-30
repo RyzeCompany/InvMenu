@@ -16,6 +16,10 @@ if($mode === 'verify'){
 	if($package_path === null || $original_path !== null){
 		throw new RuntimeException('The fork must be installed without a second upstream copy.');
 	}
+	$package_path = realpath($package_path);
+	if($package_path === false){
+		throw new RuntimeException('Cannot resolve the installed fork directory.');
+	}
 	$menu = new ReflectionClass(\muqsit\invmenu\InvMenu::class);
 	if(!str_starts_with((string) $menu->getFileName(), $package_path . '/src/')){
 		throw new RuntimeException('The original namespace must load from the fork.');
