@@ -17,6 +17,28 @@ clients must still be checked for opening, closing, item movement and mixed-vers
 shared inventories before a production rollout.
 
 ## Installation and setup
+
+### Composer
+
+The Composer package name for this fork is `ryzecompany/invmenu`; the PHP
+namespace remains `muqsit\invmenu`. After the package has been submitted to
+Packagist and the `v4.7.5` tag has been published, install it with:
+
+```bash
+composer require ryzecompany/invmenu:^4.7.5
+```
+
+The package requires PHP 8.1+ and the PocketMine-MP 5.41+ API. RyzeMP satisfies
+that API dependency through its existing Composer `replace` declaration.
+This fork replaces `muqsit/invmenu` at its own version, so dependencies on a
+compatible upstream version do not install a second copy of the same classes.
+Existing plugins keep their imports, menu types and transaction listeners.
+
+For plugins distributed as PHARs, include the Composer dependency in the plugin
+build using your normal virion/bundling process. A dependency in `composer.json`
+alone does not embed it in an already compiled plugin.
+
+### Virion
 Build [this fork](https://github.com/RyzeCompany/InvMenu) as a virion with Poggit
 and place the resulting .phar file in your `virions/` folder. Builds from
 `Muqsit/InvMenu` do not include this fork's RyzeMP compatibility changes.

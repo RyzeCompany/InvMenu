@@ -26,3 +26,25 @@ jobs:
         run: php tests/run.php ryzemp
       - name: PocketMine API regression scenarios
         run: php tests/run.php pocketmine
+
+  composer:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        server: [pocketmine, ryzemp]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          tools: composer:v2
+          coverage: none
+      - name: Validate package metadata
+        run: composer validate --strict
+      - name: Prepare clean consumer project
+        run: php tests/composer-consumer.php "${{ matrix.server }}" "$RUNNER_TEMP/invmenu-consumer"
+      - name: Install with real server dependency
+        run: composer install --working-dir="$RUNNER_TEMP/invmenu-consumer" --ignore-platform-reqs --no-interaction --no-progress --no-scripts
+      - name: Verify autoload, replacement and server API
+        run: php tests/composer-consumer.php verify "$RUNNER_TEMP/invmenu-consumer" "${{ matrix.server }}"
