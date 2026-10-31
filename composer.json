@@ -1,13 +1,13 @@
 {
     "name": "ryzecompany/invmenu",
-    "description": "Virtual inventories for PocketMine-MP 5 and multiversion RyzeMP",
+    "description": "Virtual inventory API for multiversion RyzeMP",
     "type": "library",
     "homepage": "https://github.com/RyzeCompany/InvMenu",
     "license": "GPL-3.0-only",
     "keywords": ["pocketmine", "ryzemp", "minecraft", "bedrock", "inventory", "virion"],
     "require": {
         "php": "^8.1",
-        "pocketmine/pocketmine-mp": "^5.41.0"
+        "ryzemcbe/ryzemp": "^5.44.2-p1"
     },
     "replace": {
         "muqsit/invmenu": "self.version"

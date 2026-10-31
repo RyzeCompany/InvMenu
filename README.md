@@ -1,7 +1,7 @@
 # InvMenu
-Create and manage virtual inventories in PocketMine-MP.
+Create and manage virtual inventories in RyzeMP.
 
-This RyzeCompany fork also supports RyzeMP's multiversion network API. The public
+This RyzeCompany fork uses RyzeMP's multiversion network API. The public
 `muqsit\invmenu` namespace, menu types and transaction listeners are unchanged.
 Fake blocks use the recipient's session palette; closing restores the real block
 and block entity through the matching PocketMine or RyzeMP World API.
@@ -21,22 +21,41 @@ shared inventories before a production rollout.
 ### Composer
 
 The Composer package name for this fork is `ryzecompany/invmenu`; the PHP
-namespace remains `muqsit\invmenu`. After the package has been submitted to
-Packagist and the `v4.7.5` tag has been published, install it with:
+namespace remains `muqsit\invmenu`. In an existing Composer project, run:
 
 ```bash
+composer config minimum-stability beta
+composer config prefer-stable true
 composer require ryzecompany/invmenu:^4.7.5
 ```
 
-The package requires PHP 8.1+ and the PocketMine-MP 5.41+ API. RyzeMP satisfies
-that API dependency through its existing Composer `replace` declaration.
+If Packagist has not indexed this fork yet, add its public repository before
+the require command:
+
+```bash
+composer config repositories.invmenu vcs https://github.com/RyzeCompany/InvMenu.git
+```
+
+The package requires PHP 8.1+ and installs `ryzemcbe/ryzemp:^5.44.2-p1` automatically.
+The numeric Composer API version corresponds to the API in RyzeMP 1.0.0-beta.4;
+the server keeps its independent version. The beta setting allows the tagged
+BedrockProtocol and BedrockData dependencies while stable releases remain preferred.
 This fork replaces `muqsit/invmenu` at its own version, so dependencies on a
 compatible upstream version do not install a second copy of the same classes.
 Existing plugins keep their imports, menu types and transaction listeners.
 
+To use RyzeMP's API directly in another plugin project, configure the same beta
+and stable preferences, then run `composer require --dev ryzemcbe/ryzemp:^5.44.2-p1`.
+See [the RyzeMP Composer API guide](https://github.com/RyzeCompany/RyzeMP/blob/main/docs/COMPOSER_API.md).
+
+Executing API code requires the compatible PocketMine PHP runtime and its native
+extensions. For IDE/static-analysis installation on an ordinary PHP workstation,
+add `--ignore-platform-req='ext-*'` to the require command; this does not supply
+the runtime required to execute the API. Keep Composer's security policy enabled.
+
 For plugins distributed as PHARs, include the Composer dependency in the plugin
-build using your normal virion/bundling process. A dependency in `composer.json`
-alone does not embed it in an already compiled plugin.
+build using your normal virion/bundling process, excluding the server dependencies.
+A dependency in `composer.json` alone does not embed it in an already compiled plugin.
 
 ### Virion
 Build [this fork](https://github.com/RyzeCompany/InvMenu) as a virion with Poggit

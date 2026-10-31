@@ -29,22 +29,19 @@ jobs:
 
   composer:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        server: [pocketmine, ryzemp]
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
-      - uses: shivammathur/setup-php@v2
+      - uses: pmmp/setup-php-action@3.2.0
         with:
           php-version: '8.4'
-          tools: composer:v2
-          coverage: none
+          install-path: ./bin
+          pm-version-major: 5
       - name: Validate package metadata
         run: composer validate --strict
       - name: Prepare clean consumer project
-        run: php tests/composer-consumer.php "${{ matrix.server }}" "$RUNNER_TEMP/invmenu-consumer"
+        run: php tests/composer-consumer.php prepare "$RUNNER_TEMP/invmenu-consumer"
       - name: Install with real server dependency
-        run: composer install --working-dir="$RUNNER_TEMP/invmenu-consumer" --ignore-platform-reqs --no-interaction --no-progress --no-scripts
+        run: composer install --working-dir="$RUNNER_TEMP/invmenu-consumer" --no-interaction --no-progress --no-scripts
       - name: Verify autoload, replacement and server API
-        run: php tests/composer-consumer.php verify "$RUNNER_TEMP/invmenu-consumer" "${{ matrix.server }}"
+        run: php -d memory_limit=512M tests/composer-consumer.php verify "$RUNNER_TEMP/invmenu-consumer"

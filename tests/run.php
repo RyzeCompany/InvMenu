@@ -94,7 +94,7 @@ function acknowledge(InvMenuEventHandler $handler, NetworkSession $network) : vo
 
 $tests = [];
 $tests['virtual blocks use each recipient palette'] = static function() : void{
-	foreach([589, 827, 844, 975, 2169, 2193] as $protocol){
+	foreach([589, 827, 844, 975, 2169, 2193, 2225] as $protocol){
 		[$player, , $network] = fixture($protocol);
 		$graphic = new BlockInvMenuGraphic(new Block(54), new Vector3(4, 65, -8));
 		$graphic->send($player, null);
