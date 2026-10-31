@@ -1,10 +1,16 @@
 {
-    "name": "muqsit/invmenu",
-    "description": "A PocketMine-MP virion to create and manage virtual inventories!",
+    "name": "ryzecompany/invmenu",
+    "description": "Virtual inventory API for multiversion RyzeMP",
     "type": "library",
-    "license": "GPL-3.0",
+    "homepage": "https://github.com/RyzeCompany/InvMenu",
+    "license": "GPL-3.0-only",
+    "keywords": ["pocketmine", "ryzemp", "minecraft", "bedrock", "inventory", "virion"],
     "require": {
-        "pocketmine/pocketmine-mp": "^5.0.0"
+        "php": "^8.1",
+        "ryzemcbe/ryzemp": "^5.44.2-p1"
+    },
+    "replace": {
+        "muqsit/invmenu": "self.version"
     },
     "autoload": {
         "classmap": ["src"]
@@ -13,6 +19,10 @@
         {
             "name": "Muqsit",
             "email": "hackhack05@gmail.com"
+        },
+        {
+            "name": "RyzeCompany",
+            "homepage": "https://github.com/RyzeCompany"
         }
     ],
     "extra": {
@@ -20,5 +30,18 @@
             "spec": "3.0",
             "namespace-root": "muqsit\\invmenu"
         }
+    },
+    "scripts": {
+        "test": [
+            "@php tests/run.php ryzemp",
+            "@php tests/run.php pocketmine"
+        ]
+    },
+    "support": {
+        "source": "https://github.com/RyzeCompany/InvMenu"
+    },
+    "archive": {
+        "exclude": ["/.github", "/tests", "/.poggit.yml"]
     }
 }
+

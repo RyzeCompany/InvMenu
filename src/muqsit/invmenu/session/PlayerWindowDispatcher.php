@@ -28,8 +28,10 @@ final class PlayerWindowDispatcher{
 
 	private ?TaskHandler $task_handler = null;
 	private ?Closure $container_open_callback = null;
+	private bool $started = false;
 
 	private ?int $window_id = null;
+	private int $window_type = WindowTypes::CONTAINER;
 
 	/** @var list<ClientboundPacket> */
 	private array $packets;
@@ -49,12 +51,25 @@ final class PlayerWindowDispatcher{
 		readonly public InvMenuInfo $info,
 		public int $retry_timeo = 20, // ticks
 		public int $finalization_timeo = 20 // ticks
-	){
-		$info->graphic->send($session->player, $info->graphic_name);
-		$session->network->waitUntil(PlayerNetwork::DELAY_TYPE_OPERATION, $info->graphic->getAnimationDuration(), function(bool $success) : void{
+	){}
+
+	public function start() : void{
+		if($this->started || $this->result !== null){
+			return;
+		}
+		$this->started = true;
+		if(!$this->session->player->isConnected()){
+			$this->setResult(false);
+			return;
+		}
+		$this->info->graphic->send($this->session->player, $this->info->graphic_name);
+		$this->session->network->waitUntil(PlayerNetwork::DELAY_TYPE_OPERATION, $this->info->graphic->getAnimationDuration(), function(bool $success) : void{
+			if($this->result !== null){
+				return;
+			}
 			$success = $success && $this->registerContainerOpenCallbacks();
 			$success = $success && $this->info->graphic->sendInventory($this->session->player, $this->info->menu->getInventory());
-			if($success){
+			if($success && $this->result === null){
 				$this->session->current = $this->info;
 			}else{
 				$this->setResult(false);
@@ -93,6 +108,7 @@ final class PlayerWindowDispatcher{
 			foreach($packets as $packet){
 				if($packet instanceof ContainerOpenPacket){
 					$translator->translate($this->session, $this->info, $packet);
+					$this->window_type = $packet->windowType;
 				}
 			}
 
@@ -110,14 +126,17 @@ final class PlayerWindowDispatcher{
 	}
 
 	public function run() : void{
-		if(--$this->retry_timeo < 0 || !$this->session->player->isConnected()){
+		if($this->state !== self::STATE_SENDING){
+			return;
+		}
+		if(--$this->retry_timeo < 0 || !$this->session->player->isConnected() || $this->session->player->getCurrentWindow() !== $this->info->menu->getInventory()){
 			$this->setResult(false);
 			return;
 		}
 
 		assert($this->window_id !== null);
 		$session = $this->session->player->getNetworkSession();
-		$session->sendDataPacket(ContainerClosePacket::create($this->window_id, WindowTypes::CONTAINER, false));
+		$session->sendDataPacket(ContainerClosePacket::create($this->window_id, $this->window_type, false));
 		$this->n_finalization_acks++;
 		foreach($this->packets as $packet){
 			$session->sendDataPacket($packet);
@@ -125,8 +144,12 @@ final class PlayerWindowDispatcher{
 	}
 
 	public function setResult(bool $result) : void{
+		if($this->result !== null){
+			return;
+		}
 		$this->result = $result;
-		if(!$result){
+		$this->state = self::STATE_FINALIZING;
+		if(!$result && $this->session->current === $this->info){
 			// this belongs here so we do not end up calling inventory close listener on failed dispatches
 			$this->session->current = null;
 		}
@@ -141,18 +164,23 @@ final class PlayerWindowDispatcher{
 				$this->session->player->getNetworkSession()->getInvManager()?->syncContents($this->info->menu->getInventory());
 			}else{
 				if($this->window_id !== null){
-					$this->session->player->removeCurrentWindow();
+					if($this->session->player->getCurrentWindow() === $this->info->menu->getInventory()){
+						$this->session->player->removeCurrentWindow();
+					}
 					$manager?->onClientRemoveWindow($this->window_id); // for 'dirty' sends - when we send container but wait for graphic
 				}
 				$this->info->graphic->remove($this->session->player);
 			}
 		}
 		$this->container_open_callback = null;
-		foreach($this->callbacks as $callback){
+		$callbacks = $this->callbacks;
+		$this->callbacks = [];
+		foreach($callbacks as $callback){
 			$callback($result);
 		}
-		$this->callbacks = [];
-		$this->state = self::STATE_FINALIZING;
+		if($this->state === self::STATE_COMPLETED){
+			return;
+		}
 		if($this->n_finalization_acks > 0){
 			$this->task_handler = InvMenuHandler::getRegistrant()->getScheduler()->scheduleDelayedTask(new ClosureTask($this->finalize(...)), $this->finalization_timeo);
 		}else{
@@ -172,8 +200,14 @@ final class PlayerWindowDispatcher{
 	}
 
 	public function finalize() : void{
+		if($this->state === self::STATE_COMPLETED){
+			return;
+		}
 		if($this->result === null){
 			$this->setResult(false);
+			if($this->state === self::STATE_COMPLETED){
+				return;
+			}
 		}
 		$this->task_handler?->cancel();
 		$this->task_handler = null;
@@ -182,15 +216,16 @@ final class PlayerWindowDispatcher{
 		if($this->session->dispatcher === $this){
 			$this->session->dispatcher = null;
 		}
-		if($this->after_finalization !== null){
+		$after_finalization = $this->after_finalization;
+		$this->after_finalization = null;
+		if($after_finalization !== null){
 			if($this->session->player->isConnected()){
-				[$menu, $name, $cb] = $this->after_finalization;
+				[$menu, $name, $cb] = $after_finalization;
 				$menu->send($this->session->player, $name, $cb);
-			}elseif($this->after_finalization[2] !== null){
-				$this->after_finalization[2](false);
+			}elseif($after_finalization[2] !== null){
+				$after_finalization[2](false);
 			}
 		}
-		$this->after_finalization = null;
 	}
 
 	public function then(InvMenu $menu, ?string $name, ?Closure $callback) : void{
@@ -201,3 +236,4 @@ final class PlayerWindowDispatcher{
 		$this->after_finalization = [$menu, $name, $callback];
 	}
 }
+

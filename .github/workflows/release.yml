@@ -1,0 +1,45 @@
+name: Publish InvMenu
+
+on:
+  workflow_run:
+    workflows: [InvMenu compatibility]
+    types: [completed]
+    branches: [pm5]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    if: (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_repository.full_name == github.repository) || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/pm5')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+      - name: Publish the tested library release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(sed -n 's/^version: //p' virion.yml)"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          tag="v$version"
+          source_sha="$(git rev-parse HEAD)"
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" > /dev/null; then
+            echo "$tag is already published; it is preserved."
+            exit 0
+          fi
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$tag" > /tmp/invmenu-tag.json; then
+            test "$(python3 -c 'import json; print(json.load(open("/tmp/invmenu-tag.json"))["object"]["sha"])')" = "$source_sha"
+            flags=(--verify-tag)
+          else
+            flags=(--target "$source_sha")
+          fi
+          gh release create "$tag" --repo "$GITHUB_REPOSITORY" "${flags[@]}" \
+            --title "InvMenu $version for RyzeMP" --notes-file "docs/releases/$version.md"

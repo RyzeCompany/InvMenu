@@ -1,10 +1,72 @@
 # InvMenu
-Create and manage virtual inventories in PocketMine-MP.
+Create and manage virtual inventories in RyzeMP.
+
+This RyzeCompany fork uses RyzeMP's multiversion network API. The public
+`muqsit\invmenu` namespace, menu types and transaction listeners are unchanged.
+Fake blocks use the recipient's session palette; closing restores the real block
+and block entity through the matching PocketMine or RyzeMP World API.
+
+The compatibility code handles pre-1.21 close packets without `windowType`,
+preserves each menu's window type during retries and expires missing latency
+responses after 100 server ticks. An expired pending batch reports failure and
+releases its callbacks; a late response cannot reopen the expired menu.
+
+RyzeMP's accepted protocol list remains the source of truth for client versions.
+Support in this library does not add new protocols to the server. Real Bedrock
+clients must still be checked for opening, closing, item movement and mixed-version
+shared inventories before a production rollout.
 
 ## Installation and setup
-Download the compiled .phar file from [Poggit CI](https://poggit.pmmp.io/ci/Muqsit/InvMenu/~) and place it in your `virions/` folder.
+
+### Composer
+
+The Composer package name for this fork is `ryzecompany/invmenu`; the PHP
+namespace remains `muqsit\invmenu`. In an existing Composer project, run:
+
+```bash
+composer config minimum-stability beta
+composer config prefer-stable true
+composer require ryzecompany/invmenu:^4.7.5
+```
+
+If Packagist has not indexed this fork yet, add its public repository before
+the require command:
+
+```bash
+composer config repositories.invmenu vcs https://github.com/RyzeCompany/InvMenu.git
+```
+
+The package requires PHP 8.1+ and installs `ryzemcbe/ryzemp:^5.44.2-p1` automatically.
+The numeric Composer API version corresponds to the API in RyzeMP 1.0.0-beta.4;
+the server keeps its independent version. The beta setting allows the tagged
+BedrockProtocol and BedrockData dependencies while stable releases remain preferred.
+This fork replaces `muqsit/invmenu` at its own version, so dependencies on a
+compatible upstream version do not install a second copy of the same classes.
+Existing plugins keep their imports, menu types and transaction listeners.
+
+To use RyzeMP's API directly in another plugin project, configure the same beta
+and stable preferences, then run `composer require --dev ryzemcbe/ryzemp:^5.44.2-p1`.
+See [the RyzeMP Composer API guide](https://github.com/RyzeCompany/RyzeMP/blob/main/docs/COMPOSER_API.md).
+
+Executing API code requires the compatible PocketMine PHP runtime and its native
+extensions. For IDE/static-analysis installation on an ordinary PHP workstation,
+add `--ignore-platform-req='ext-*'` to the require command; this does not supply
+the runtime required to execute the API. Keep Composer's security policy enabled.
+
+For plugins distributed as PHARs, include the Composer dependency in the plugin
+build using your normal virion/bundling process, excluding the server dependencies.
+A dependency in `composer.json` alone does not embed it in an already compiled plugin.
+
+### Virion
+Build [this fork](https://github.com/RyzeCompany/InvMenu) as a virion with Poggit
+and place the resulting .phar file in your `virions/` folder. Builds from
+`Muqsit/InvMenu` do not include this fork's RyzeMP compatibility changes.
 Read [installation](https://github.com/Muqsit/InvMenu/wiki/Installation) and [using in a plugin](https://github.com/Muqsit/InvMenu/wiki/Using-InvMenu-in-a-plugin)
 for a more elaborate guide on how to setup InvMenu library.
+
+Rebuild every plugin that embeds InvMenu using this fork. Replacing a server PHAR
+or copying a virion next to an already compiled plugin does not replace the
+plugin's bundled copy of InvMenu.
 
 > [!NOTE]
 > You must register `InvMenuHandler` before you can use InvMenu.
@@ -191,4 +253,5 @@ $menu = InvMenu::create(self::TYPE_DISPENSER);
 
 ## InvMenu Wiki
 Applications, examples, tutorials and featured projects using InvMenu can be found on the [InvMenu Wiki](https://github.com/Muqsit/InvMenu/wiki/InvMenu-v4.0).
+
 

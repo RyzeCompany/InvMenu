@@ -5,17 +5,24 @@ declare(strict_types=1);
 namespace muqsit\invmenu\session\network;
 
 use Closure;
+use muqsit\invmenu\InvMenuHandler;
 use muqsit\invmenu\session\network\handler\PlayerNetworkHandler;
 use pocketmine\network\mcpe\NetworkSession;
 use pocketmine\network\mcpe\protocol\NetworkStackLatencyPacket;
+use pocketmine\scheduler\ClosureTask;
+use pocketmine\scheduler\TaskHandler;
 use SplQueue;
 
 final class PlayerNetwork{
 
 	public const DELAY_TYPE_ANIMATION_WAIT = 0;
 	public const DELAY_TYPE_OPERATION = 1;
+	private const RESPONSE_TIMEOUT_TICKS = 100;
 
 	private ?NetworkStackLatencyEntry $current = null;
+	private ?TaskHandler $timeout_task = null;
+	private bool $processing = false;
+	private bool $finalized = false;
 
 	/** @var SplQueue<NetworkStackLatencyEntry> */
 	private SplQueue $queue;
@@ -28,15 +35,29 @@ final class PlayerNetwork{
 	}
 
 	public function finalize() : void{
+		$this->finalized = true;
 		$this->dropPending();
 	}
 
 	public function dropPending() : void{
-		foreach($this->queue as $entry){
-			($entry->then)(false);
-		}
+		$pending = $this->queue;
 		$this->queue = new SplQueue();
-		$this->setCurrent(null);
+		if($this->current !== null){
+			$pending->unshift($this->current);
+			$this->current = null;
+		}
+		$this->timeout_task?->cancel();
+		$this->timeout_task = null;
+		$processing = $this->processing;
+		$this->processing = true;
+		try{
+			foreach($pending as $entry){
+				($entry->then)(false);
+			}
+		}finally{
+			$this->processing = $processing;
+			$this->advance();
+		}
 	}
 
 	/**
@@ -44,12 +65,12 @@ final class PlayerNetwork{
 	 * @param Closure(bool) : bool $then
 	 */
 	public function wait(int $type, Closure $then) : void{
-		$entry = $this->handler->createNetworkStackLatencyEntry($then);
-		if($this->current !== null){
-			$this->queue->enqueue($entry);
-		}else{
-			$this->setCurrent($entry);
+		if($this->finalized){
+			$then(false);
+			return;
 		}
+		$this->queue->enqueue($this->handler->createNetworkStackLatencyEntry($then));
+		$this->advance();
 	}
 
 	/**
@@ -60,19 +81,18 @@ final class PlayerNetwork{
 	 * @param Closure(bool) : bool $then
 	 */
 	public function waitUntil(int $type, int $wait_ms, Closure $then) : void{
-		if($wait_ms <= 0 && $this->queue->isEmpty()){
+		if($this->finalized){
+			$then(false);
+			return;
+		}
+		if($wait_ms <= 0 && $this->current === null && $this->queue->isEmpty() && !$this->processing){
 			$then(true);
 			return;
 		}
 
-		$elapsed_ms = 0.0;
-		$this->wait($type, function(bool $success) use($wait_ms, $then, &$elapsed_ms) : bool{
-			if($this->current === null){
-				$then(false);
-				return false;
-			}
-
-			$elapsed_ms += (microtime(true) * 1000) - $this->current->sent_at;
+		$started_at = microtime(true) * 1000;
+		$this->wait($type, function(bool $success) use($wait_ms, $then, $started_at) : bool{
+			$elapsed_ms = (microtime(true) * 1000) - $started_at;
 			if(!$success || $elapsed_ms >= $wait_ms){
 				$then($success);
 				return false;
@@ -82,30 +102,38 @@ final class PlayerNetwork{
 		});
 	}
 
-	private function setCurrent(?NetworkStackLatencyEntry $entry) : void{
-		if($this->current !== null){
-			$this->processCurrent(false);
+	private function advance() : void{
+		if($this->current !== null || $this->processing || $this->finalized || $this->queue->isEmpty()){
+			return;
 		}
-
-		$this->current = $entry;
-		if($entry !== null){
-			if($this->network_session->sendDataPacket(NetworkStackLatencyPacket::create($entry->network_timestamp, true))){
-				$entry->sent_at = microtime(true) * 1000;
-			}else{
-				$this->processCurrent(false);
+		$entry = $this->current = $this->queue->dequeue();
+		$entry->sent_at = microtime(true) * 1000;
+		// Expire the whole pending batch: no echo must not leave menu callbacks
+		// blocked indefinitely or advance through a stale backlog after a timeout.
+		$this->timeout_task = InvMenuHandler::getRegistrant()->getScheduler()->scheduleDelayedTask(new ClosureTask(function() use($entry) : void{
+			if($this->current === $entry){
+				$this->dropPending();
 			}
+		}), self::RESPONSE_TIMEOUT_TICKS);
+		if(!$this->network_session->sendDataPacket(NetworkStackLatencyPacket::create($entry->network_timestamp, true)) && $this->current === $entry){
+			$this->processCurrent(false);
 		}
 	}
 
 	private function processCurrent(bool $success) : void{
 		if($this->current !== null){
 			$current = $this->current;
-			$repeat = ($current->then)($success);
 			$this->current = null;
-			if($repeat && $success){
-				$this->setCurrent($current);
-			}elseif(!$this->queue->isEmpty()){
-				$this->setCurrent($this->queue->dequeue());
+			$this->timeout_task?->cancel();
+			$this->timeout_task = null;
+			$this->processing = true;
+			try{
+				if(($current->then)($success) && $success && !$this->finalized){
+					$this->queue->unshift($current);
+				}
+			}finally{
+				$this->processing = false;
+				$this->advance();
 			}
 		}
 	}
@@ -116,3 +144,4 @@ final class PlayerNetwork{
 		}
 	}
 }
+
