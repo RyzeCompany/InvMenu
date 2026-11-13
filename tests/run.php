@@ -89,7 +89,11 @@ function latestLatency(NetworkSession $network) : int{
 }
 
 function acknowledge(InvMenuEventHandler $handler, NetworkSession $network) : void{
-	$handler->onDataPacketReceive(new \pocketmine\event\server\DataPacketReceiveEvent($network, new PacketViolationWarningPacket()));
+	// ContainerOpen is emitted before the post-open latency barrier.
+	InvMenuHandler::getRegistrant()->getScheduler()->advance(1);
+	$handler->onDataPacketReceive(new \pocketmine\event\server\DataPacketReceiveEvent(
+		$network, NetworkStackLatencyPacket::create(latestLatency($network), false)
+	));
 }
 
 $tests = [];
@@ -154,15 +158,72 @@ $tests['legacy close rejection works without an initialized windowType'] = stati
 	}
 	$session->dispatcher->finalize();
 };
-$tests['hopper retries retain their actual window type'] = static function() : void{
-	[$player, $session, $network, $scheduler] = fixture();
+$tests['hopper opening uses an ordered latency echo without fake close responses'] = static function() : void{
+	[$player, $session, $network, $scheduler, $events] = fixture();
+	$results = [];
 	$menu = new InvMenu(new TestMenuType(new TestGraphic(WindowTypes::HOPPER)));
-	$menu->send($player);
+	$menu->send($player, callback: static function(bool $ok) use (&$results) : void{ $results[] = $ok; });
+	$opens = array_values(array_filter($network->packets, static fn($p) => $p instanceof \pocketmine\network\mcpe\protocol\ContainerOpenPacket));
+	same(1, count($opens));
+	same(WindowTypes::HOPPER, $opens[0]->windowType);
 	$scheduler->advance(1);
-	$closes = array_values(array_filter($network->packets, static fn($p) => $p instanceof ContainerClosePacket));
-	same(1, count($closes));
-	same(WindowTypes::HOPPER, $closes[0]->windowType);
-	$session->dispatcher->setResult(false);
+	same(0, count(array_filter($network->packets, static fn($p) => $p instanceof ContainerClosePacket)));
+	same([], $results);
+	$events->onDataPacketReceive(new \pocketmine\event\server\DataPacketReceiveEvent(
+		$network, NetworkStackLatencyPacket::create(latestLatency($network), false)
+	));
+	same([true], $results);
+	same(1, $network->manager->syncs);
+	same(null, $session->dispatcher);
+	$scheduler->advance(30);
+	same(1, count(array_filter($network->packets, static fn($p) => $p instanceof \pocketmine\network\mcpe\protocol\ContainerOpenPacket)));
+	same(0, count(array_filter($network->packets, static fn($p) => $p instanceof ContainerClosePacket)));
+};
+$tests['real protocol violations remain visible and never acknowledge a menu'] = static function() : void{
+	[$player, $session, $network, $scheduler, $events] = fixture();
+	$results = [];
+	(new InvMenu(new TestMenuType(new TestGraphic())))->send($player,
+		callback: static function(bool $ok) use (&$results) : void{ $results[] = $ok; });
+	$scheduler->advance(1);
+	$warning = new \pocketmine\event\server\DataPacketReceiveEvent($network, new PacketViolationWarningPacket());
+	$events->onDataPacketReceive($warning);
+	same(false, $warning->cancelled);
+	same([], $results);
+	same(PlayerWindowDispatcher::STATE_SENDING, $session->dispatcher->state);
+	acknowledge($events, $network);
+	same([true], $results);
+};
+$tests['an incorrect latency echo cannot complete the menu'] = static function() : void{
+	[$player, $session, $network, $scheduler, $events] = fixture();
+	$results = [];
+	(new InvMenu(new TestMenuType(new TestGraphic())))->send($player,
+		callback: static function(bool $ok) use (&$results) : void{ $results[] = $ok; });
+	$scheduler->advance(1);
+	$events->onDataPacketReceive(new \pocketmine\event\server\DataPacketReceiveEvent(
+		$network, NetworkStackLatencyPacket::create(latestLatency($network) + 999, false)
+	));
+	same([], $results);
+	acknowledge($events, $network);
+	same([true], $results);
+};
+$tests['missing post-open echo fails once and does not fabricate close responses'] = static function() : void{
+	[$player, $session, $network, $scheduler, $events] = fixture();
+	$results = [];
+	$graphic = new TestGraphic();
+	(new InvMenu(new TestMenuType($graphic)))->send($player,
+		callback: static function(bool $ok) use (&$results) : void{ $results[] = $ok; });
+	$scheduler->advance(1);
+	$scheduler->advance(100);
+	same([false], $results);
+	same(null, $session->dispatcher);
+	same(null, $player->getCurrentWindow());
+	same(1, $graphic->removed);
+	same(0, count(array_filter($network->packets, static fn($p) => $p instanceof ContainerClosePacket)));
+	$events->onDataPacketReceive(new \pocketmine\event\server\DataPacketReceiveEvent(
+		$network, NetworkStackLatencyPacket::create(latestLatency($network), false)
+	));
+	same([false], $results);
+	same(0, $scheduler->activeCount());
 };
 $tests['cancelled opening cleans its dispatcher and reports failure once'] = static function() : void{
 	[$player, $session, $network, $scheduler] = fixture();

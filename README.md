@@ -6,10 +6,14 @@ This RyzeCompany fork uses RyzeMP's multiversion network API. The public
 Fake blocks use the recipient's session palette; closing restores the real block
 and block entity through the matching PocketMine or RyzeMP World API.
 
-The compatibility code handles pre-1.21 close packets without `windowType`,
-preserves each menu's window type during retries and expires missing latency
-responses after 100 server ticks. An expired pending batch reports failure and
-releases its callbacks; a late response cannot reopen the expired menu.
+The compatibility code handles pre-1.21 close packets without `windowType`.
+Virtual menus now use an ordered `NetworkStackLatencyPacket` echo after the actual
+`ContainerOpenPacket` as a bounded transport barrier. InvMenu never fabricates
+a client-response `ContainerClosePacket` to provoke a packet violation, and
+does not treat protocol warnings as success callbacks. Echoes do not guarantee
+the inventory was rendered; verify with actual Bedrock clients before release.
+Missing echoes fail safely after 100 server ticks; late responses cannot reopen
+an expired menu.
 
 RyzeMP's accepted protocol list remains the source of truth for client versions.
 Support in this library does not add new protocols to the server. Real Bedrock

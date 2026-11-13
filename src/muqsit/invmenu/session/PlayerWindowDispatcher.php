@@ -11,14 +11,11 @@ use muqsit\invmenu\InvMenuHandler;
 use muqsit\invmenu\session\network\PlayerNetwork;
 use pocketmine\block\inventory\BlockInventory;
 use pocketmine\inventory\Inventory;
-use pocketmine\network\mcpe\protocol\ClientboundPacket;
-use pocketmine\network\mcpe\protocol\ContainerClosePacket;
 use pocketmine\network\mcpe\protocol\ContainerOpenPacket;
 use pocketmine\network\mcpe\protocol\types\BlockPosition;
 use pocketmine\network\mcpe\protocol\types\inventory\WindowTypes;
 use pocketmine\scheduler\ClosureTask;
 use pocketmine\scheduler\TaskHandler;
-use function assert;
 
 final class PlayerWindowDispatcher{
 
@@ -30,16 +27,13 @@ final class PlayerWindowDispatcher{
 	private ?Closure $container_open_callback = null;
 	private bool $started = false;
 
-	private ?int $window_id = null;
-	private int $window_type = WindowTypes::CONTAINER;
-
-	/** @var list<ClientboundPacket> */
-	private array $packets;
+	private bool $confirmation_requested = false;
 
 	/** @var list<Closure(bool) : void> */
 	private array $callbacks = [];
 
 	public ?bool $result = null;
+	/** @deprecated Retained for source compatibility; protocol violations are never acknowledgements. */
 	public int $n_finalization_acks = 0;
 	public int $state = self::STATE_SENDING;
 
@@ -71,6 +65,12 @@ final class PlayerWindowDispatcher{
 			$success = $success && $this->info->graphic->sendInventory($this->session->player, $this->info->menu->getInventory());
 			if($success && $this->result === null){
 				$this->session->current = $this->info;
+				// The open callback runs before InventoryManager has sent the
+				// ContainerOpenPacket. Delay one tick so the echo request follows
+				// the actual open packet in the client stream.
+				$this->task_handler = InvMenuHandler::getRegistrant()->getScheduler()->scheduleDelayedTask(
+					new ClosureTask($this->run(...)), 1
+				);
 			}else{
 				$this->setResult(false);
 			}
@@ -108,13 +108,8 @@ final class PlayerWindowDispatcher{
 			foreach($packets as $packet){
 				if($packet instanceof ContainerOpenPacket){
 					$translator->translate($this->session, $this->info, $packet);
-					$this->window_type = $packet->windowType;
 				}
 			}
-
-			$this->window_id = $window_id;
-			$this->packets = $packets;
-			$this->task_handler = InvMenuHandler::getRegistrant()->getScheduler()->scheduleRepeatingTask(new ClosureTask($this->run(...)), 1);
 			return $packets;
 		};
 		// Take priority over other container open callbacks.
@@ -126,21 +121,26 @@ final class PlayerWindowDispatcher{
 	}
 
 	public function run() : void{
-		if($this->state !== self::STATE_SENDING){
+		if($this->state !== self::STATE_SENDING || $this->confirmation_requested){
 			return;
 		}
-		if(--$this->retry_timeo < 0 || !$this->session->player->isConnected() || $this->session->player->getCurrentWindow() !== $this->info->menu->getInventory()){
+		$this->task_handler = null;
+		$player = $this->session->player;
+		if(!$player->isConnected() || $player->getCurrentWindow() !== $this->info->menu->getInventory()){
 			$this->setResult(false);
 			return;
 		}
-
-		assert($this->window_id !== null);
-		$session = $this->session->player->getNetworkSession();
-		$session->sendDataPacket(ContainerClosePacket::create($this->window_id, $this->window_type, false));
-		$this->n_finalization_acks++;
-		foreach($this->packets as $packet){
-			$session->sendDataPacket($packet);
-		}
+		$this->confirmation_requested = true;
+		// This is an ordered transport barrier, not a proof of client-side
+		// rendering. It is intentionally bounded by PlayerNetwork's timeout.
+		// Never send a forged client-response ContainerClosePacket to obtain
+		// a PacketViolationWarning as an artificial acknowledgement.
+		$this->session->network->wait(PlayerNetwork::DELAY_TYPE_OPERATION, function(bool $ack) use ($player) : bool{
+			if($this->state === self::STATE_SENDING){
+				$this->setResult($ack && $player->isConnected() && $player->getCurrentWindow() === $this->info->menu->getInventory());
+			}
+			return false;
+		});
 	}
 
 	public function setResult(bool $result) : void{
@@ -163,11 +163,11 @@ final class PlayerWindowDispatcher{
 			if($result){
 				$this->session->player->getNetworkSession()->getInvManager()?->syncContents($this->info->menu->getInventory());
 			}else{
-				if($this->window_id !== null){
-					if($this->session->player->getCurrentWindow() === $this->info->menu->getInventory()){
-						$this->session->player->removeCurrentWindow();
-					}
-					$manager?->onClientRemoveWindow($this->window_id); // for 'dirty' sends - when we send container but wait for graphic
+				// A failed server-initiated opening is not a client close.
+				// Let the native window lifecycle send a server-initiated
+				// close instead of forging a client response.
+				if($this->session->player->getCurrentWindow() === $this->info->menu->getInventory()){
+					$this->session->player->removeCurrentWindow();
 				}
 				$this->info->graphic->remove($this->session->player);
 			}
@@ -181,11 +181,9 @@ final class PlayerWindowDispatcher{
 		if($this->state === self::STATE_COMPLETED){
 			return;
 		}
-		if($this->n_finalization_acks > 0){
-			$this->task_handler = InvMenuHandler::getRegistrant()->getScheduler()->scheduleDelayedTask(new ClosureTask($this->finalize(...)), $this->finalization_timeo);
-		}else{
-			$this->finalize();
-		}
+		// No synthetic close packets remain; finalization does not wait for
+		// protocol violations or retry-close acknowledgements.
+		$this->finalize();
 	}
 
 	/**
