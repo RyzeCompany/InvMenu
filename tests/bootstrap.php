@@ -204,6 +204,7 @@ namespace pocketmine\network\mcpe{
 		public InventoryManager $manager;
 		public function __construct(private \pocketmine\network\mcpe\convert\TypeConverter $converter){ $this->manager = new InventoryManager($this); }
 		public function getTypeConverter() : \pocketmine\network\mcpe\convert\TypeConverter{ return $this->converter; }
+		public function getProtocolId() : int{ return $this->converter->protocol_id; }
 		public function getInvManager() : InventoryManager{ return $this->manager; }
 		public function getPlayer() : ?\pocketmine\player\Player{ return $this->player; }
 		public function sendDataPacket(\pocketmine\network\mcpe\protocol\ClientboundPacket $packet) : bool{ $this->packets[] = $packet; return $this->send_success; }

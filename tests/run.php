@@ -360,6 +360,37 @@ $tests['readonly menus still cancel native inventory transactions'] = static fun
 	same(1, $clicks);
 };
 
+$tests['legacy click waits for its screen animation before closing the menu'] = static function() : void{
+	foreach([844 => 4, 2225 => 0] as $protocol => $delay){
+		[$player, , $network, $scheduler, $events] = fixture($protocol);
+		$menu = new InvMenu(new TestMenuType(new TestGraphic()));
+		$closed = 0;
+		$menu->setListener(InvMenu::readonly(static function($transaction) use(&$closed) : void{
+			$transaction->then(static function(Player $player) use(&$closed) : void{
+				++$closed;
+				$player->removeCurrentWindow();
+			});
+		}));
+		$menu->send($player);
+		acknowledge($events, $network);
+		$action = new \pocketmine\inventory\transaction\action\SlotChangeAction($menu->getInventory());
+		$event = new \pocketmine\event\inventory\InventoryTransactionEvent(new \pocketmine\inventory\transaction\InventoryTransaction($player, [$action]));
+		$events->onInventoryTransaction($event);
+		same(true, $event->cancelled);
+		$session = InvMenuHandler::getPlayerManager()->get($player);
+		$session->network->notify(latestLatency($network));
+		if($delay > 0){
+			same(0, $closed, 'A latency echo must not close a legacy GUI during its animation.');
+			same($menu->getInventory(), $player->getCurrentWindow());
+			$scheduler->advance($delay - 1);
+			same(0, $closed);
+			$scheduler->advance(1);
+		}
+		same(1, $closed, 'The callback must eventually run exactly once.');
+		same(null, $player->getCurrentWindow());
+	}
+};
+
 $failed = 0;
 foreach($tests as $name => $test){
 	try{

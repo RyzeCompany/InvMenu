@@ -15,8 +15,11 @@ use pocketmine\event\server\DataPacketReceiveEvent;
 use pocketmine\inventory\transaction\action\SlotChangeAction;
 use pocketmine\network\mcpe\protocol\ContainerClosePacket;
 use pocketmine\network\mcpe\protocol\NetworkStackLatencyPacket;
+use pocketmine\scheduler\ClosureTask;
 
 final class InvMenuEventHandler implements Listener{
+	private const LEGACY_GUI_MAX_PROTOCOL = 844; // Bedrock 1.21.111 / 1.21.114
+	private const LEGACY_GUI_SETTLE_TICKS = 4;
 	
 	public function __construct(
 		readonly private PlayerManager $player_manager
@@ -137,8 +140,21 @@ final class InvMenuEventHandler implements Listener{
 		if(count($network_stack_callbacks) > 0){
 			$player_instance->network->wait(PlayerNetwork::DELAY_TYPE_ANIMATION_WAIT, static function(bool $success) use($player, $network_stack_callbacks) : bool{
 				if($success){
-					foreach($network_stack_callbacks as $callback){
-						$callback($player);
+					$run = static function() use($player, $network_stack_callbacks) : void{
+						if(!$player->isConnected()){
+							return;
+						}
+						foreach($network_stack_callbacks as $callback){
+							$callback($player);
+						}
+					};
+					$network = $player->getNetworkSession();
+					// A latency echo only confirms packet ordering. Legacy clients may still
+					// be animating the inventory transaction when a click closes its window.
+					if(method_exists($network, 'getProtocolId') && $network->getProtocolId() <= self::LEGACY_GUI_MAX_PROTOCOL){
+						InvMenuHandler::getRegistrant()->getScheduler()->scheduleDelayedTask(new ClosureTask($run), self::LEGACY_GUI_SETTLE_TICKS);
+					}else{
+						$run();
 					}
 				}
 				return false;
